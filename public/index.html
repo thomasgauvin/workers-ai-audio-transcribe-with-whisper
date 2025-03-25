@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Audio Transcription with Whisper AI</title>
+		<style>
+			body {
+				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+				line-height: 1.6;
+				color: #333;
+				max-width: 800px;
+				margin: 0 auto;
+				padding: 20px;
+			}
+			h1 {
+				color: #2563eb;
+				margin-bottom: 20px;
+			}
+			.container {
+				display: flex;
+				flex-direction: column;
+				gap: 20px;
+			}
+			.card {
+				border-radius: 8px;
+				box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+				padding: 20px;
+				background-color: #fff;
+			}
+			.form-group {
+				margin-bottom: 15px;
+			}
+			label {
+				display: block;
+				margin-bottom: 5px;
+				font-weight: 500;
+			}
+			input,
+			select {
+				width: 100%;
+				padding: 8px;
+				border: 1px solid #ddd;
+				border-radius: 4px;
+				font-size: 16px;
+			}
+			button {
+				background-color: #2563eb;
+				color: white;
+				border: none;
+				padding: 10px 15px;
+				border-radius: 4px;
+				cursor: pointer;
+				font-size: 16px;
+				transition: background-color 0.2s;
+			}
+			button:hover {
+				background-color: #1d4ed8;
+			}
+			button:disabled {
+				background-color: #93c5fd;
+				cursor: not-allowed;
+			}
+			.transcript {
+				white-space: pre-wrap;
+				margin-top: 10px;
+				padding: 15px;
+				background-color: #f9fafb;
+				border-radius: 4px;
+				border-left: 4px solid #2563eb;
+			}
+			.segments {
+				margin-top: 20px;
+				max-height: 300px;
+				overflow-y: auto;
+			}
+			.segment {
+				padding: 10px;
+				border-bottom: 1px solid #eee;
+			}
+			.segment:last-child {
+				border-bottom: none;
+			}
+			.timestamp {
+				color: #6b7280;
+				font-size: 0.85em;
+			}
+			.loading {
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				gap: 10px;
+			}
+			.spinner {
+				width: 20px;
+				height: 20px;
+				border: 3px solid rgba(0, 0, 0, 0.1);
+				border-radius: 50%;
+				border-top-color: #2563eb;
+				animation: spin 1s ease-in-out infinite;
+			}
+			@keyframes spin {
+				to {
+					transform: rotate(360deg);
+				}
+			}
+			.error {
+				color: #dc2626;
+				padding: 10px;
+				background-color: #fee2e2;
+				border-radius: 4px;
+				margin-top: 10px;
+			}
+			.word {
+				position: relative;
+				display: inline-block;
+				margin-right: 4px;
+				cursor: pointer;
+			}
+
+			.word:hover {
+				background-color: #e0e7ff;
+				border-radius: 2px;
+			}
+
+			.word-timestamp {
+				position: absolute;
+				bottom: 100%;
+				left: 50%;
+				transform: translateX(-50%);
+				background-color: #1e40af;
+				color: white;
+				padding: 2px 6px;
+				border-radius: 4px;
+				font-size: 12px;
+				white-space: nowrap;
+				opacity: 0;
+				transition: opacity 0.2s;
+				pointer-events: none;
+				z-index: 10;
+			}
+
+			.word:hover .word-timestamp {
+				opacity: 1;
+			}
+
+			.segment-words {
+				margin-top: 6px;
+				line-height: 1.8;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>Audio Transcription with Whisper AI</h1>
+
+		<div class="container">
+			<div class="card">
+				<h2>Upload Audio</h2>
+				<div class="form-group">
+					<label for="audioFile">Audio File (MP3)</label>
+					<input type="file" id="audioFile" accept=".mp3,audio/*" required />
+				</div>
+
+				<div class="form-group">
+					<label for="language">Language</label>
+					<select id="language">
+						<option value="en">English</option>
+						<option value="fr">French</option>
+						<option value="es">Spanish</option>
+						<option value="de">German</option>
+						<option value="zh">Chinese</option>
+						<option value="ja">Japanese</option>
+						<option value="auto">Auto-detect</option>
+					</select>
+				</div>
+
+				<button id="transcribeButton">Transcribe Audio</button>
+				<div id="loadingIndicator" class="loading" style="display: none">
+					<div class="spinner"></div>
+					<span>Processing your audio...</span>
+				</div>
+				<div id="errorMessage" class="error" style="display: none"></div>
+			</div>
+
+			<div class="card" id="resultsCard" style="display: none">
+				<h2>Transcription Results</h2>
+				<div>
+					<h3>Complete Transcript</h3>
+					<div id="fullTranscript" class="transcript"></div>
+				</div>
+
+				<div>
+					<h3>Segments</h3>
+					<div id="segments" class="segments"></div>
+				</div>
+			</div>
+		</div>
+
+		<script>
+			// DOM Elements
+			const audioFile = document.getElementById('audioFile');
+			const language = document.getElementById('language');
+			const transcribeButton = document.getElementById('transcribeButton');
+			const loadingIndicator = document.getElementById('loadingIndicator');
+			const errorMessage = document.getElementById('errorMessage');
+			const resultsCard = document.getElementById('resultsCard');
+			const fullTranscript = document.getElementById('fullTranscript');
+			const segments = document.getElementById('segments');
+
+			// Transcribe audio
+			transcribeButton.addEventListener('click', async () => {
+				// Validate inputs
+				if (!audioFile.files || audioFile.files.length === 0) {
+					showError('Please select an audio file');
+					return;
+				}
+
+				try {
+					// Show loading state
+					transcribeButton.disabled = true;
+					loadingIndicator.style.display = 'flex';
+					errorMessage.style.display = 'none';
+					resultsCard.style.display = 'none';
+
+					// Convert audio to base64
+					const file = audioFile.files[0];
+					const base64Audio = await fileToBase64(file);
+
+					// Prepare form data with base64 audio
+					const formData = new FormData();
+					formData.append('audioBase64', base64Audio);
+					formData.append('language', language.value);
+
+					// Send request to API
+					const response = await fetch('/transcribe', {
+						method: 'POST',
+						body: formData,
+					});
+
+					const data = await response.json();
+
+					if (!response.ok) {
+						throw new Error(data.error || 'Transcription failed');
+					}
+
+					// Display results
+					displayTranscription(data);
+				} catch (error) {
+					showError(error.message);
+				} finally {
+					transcribeButton.disabled = false;
+					loadingIndicator.style.display = 'none';
+				}
+			});
+
+			// Convert File to base64
+			function fileToBase64(file) {
+				return new Promise((resolve, reject) => {
+					const reader = new FileReader();
+					reader.readAsDataURL(file);
+					reader.onload = () => {
+						// Remove the data URL prefix (e.g., "data:audio/mp3;base64,")
+						const base64 = reader.result.toString();
+						const base64Data = base64.split(',')[1];
+						resolve(base64Data);
+					};
+					reader.onerror = (error) => reject(error);
+				});
+			}
+
+			// Display transcription results
+			function displayTranscription(data) {
+				// Show the results card
+				resultsCard.style.display = 'block';
+
+				// Display full transcript
+				fullTranscript.textContent = data.text;
+
+				// Display segments
+				segments.innerHTML = '';
+				data.segments.forEach((segment) => {
+					const segmentEl = document.createElement('div');
+					segmentEl.className = 'segment';
+
+					const formattedStart = formatTime(segment.start);
+					const formattedEnd = formatTime(segment.end);
+
+					let segmentContent = `
+						<div class="timestamp">${formattedStart} → ${formattedEnd}</div>
+					`;
+
+					// Add word-level timestamps if available
+					if (segment.words && segment.words.length > 0) {
+						let wordsHtml = '<div class="segment-words">';
+
+						segment.words.forEach((word) => {
+							const wordStart = formatTime(word.start);
+							const wordEnd = formatTime(word.end);
+							wordsHtml += `
+								<span class="word">
+									${word.word}
+									<span class="word-timestamp">${wordStart} → ${wordEnd}</span>
+								</span>
+							`;
+						});
+
+						wordsHtml += '</div>';
+						segmentContent += wordsHtml;
+					}
+
+					segmentEl.innerHTML = segmentContent;
+					segments.appendChild(segmentEl);
+				});
+			}
+
+			// Format seconds to MM:SS.ms
+			function formatTime(seconds) {
+				const minutes = Math.floor(seconds / 60);
+				const remainingSeconds = (seconds % 60).toFixed(2);
+				return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(5, '0')}`;
+			}
+
+			// Show error message
+			function showError(message) {
+				errorMessage.textContent = message;
+				errorMessage.style.display = 'block';
+			}
+		</script>
+	</body>
+</html>
