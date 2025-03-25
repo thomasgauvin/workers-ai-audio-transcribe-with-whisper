@@ -4,151 +4,7 @@
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<title>Audio Transcription with Whisper AI</title>
-		<style>
-			body {
-				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-				line-height: 1.6;
-				color: #333;
-				max-width: 800px;
-				margin: 0 auto;
-				padding: 20px;
-			}
-			h1 {
-				color: #2563eb;
-				margin-bottom: 20px;
-			}
-			.container {
-				display: flex;
-				flex-direction: column;
-				gap: 20px;
-			}
-			.card {
-				border-radius: 8px;
-				box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-				padding: 20px;
-				background-color: #fff;
-			}
-			.form-group {
-				margin-bottom: 15px;
-			}
-			label {
-				display: block;
-				margin-bottom: 5px;
-				font-weight: 500;
-			}
-			input,
-			select {
-				width: 100%;
-				padding: 8px;
-				border: 1px solid #ddd;
-				border-radius: 4px;
-				font-size: 16px;
-			}
-			button {
-				background-color: #2563eb;
-				color: white;
-				border: none;
-				padding: 10px 15px;
-				border-radius: 4px;
-				cursor: pointer;
-				font-size: 16px;
-				transition: background-color 0.2s;
-			}
-			button:hover {
-				background-color: #1d4ed8;
-			}
-			button:disabled {
-				background-color: #93c5fd;
-				cursor: not-allowed;
-			}
-			.transcript {
-				white-space: pre-wrap;
-				margin-top: 10px;
-				padding: 15px;
-				background-color: #f9fafb;
-				border-radius: 4px;
-				border-left: 4px solid #2563eb;
-			}
-			.segments {
-				margin-top: 20px;
-				max-height: 300px;
-				overflow-y: auto;
-			}
-			.segment {
-				padding: 10px;
-				border-bottom: 1px solid #eee;
-			}
-			.segment:last-child {
-				border-bottom: none;
-			}
-			.timestamp {
-				color: #6b7280;
-				font-size: 0.85em;
-			}
-			.loading {
-				display: flex;
-				align-items: center;
-				justify-content: center;
-				gap: 10px;
-			}
-			.spinner {
-				width: 20px;
-				height: 20px;
-				border: 3px solid rgba(0, 0, 0, 0.1);
-				border-radius: 50%;
-				border-top-color: #2563eb;
-				animation: spin 1s ease-in-out infinite;
-			}
-			@keyframes spin {
-				to {
-					transform: rotate(360deg);
-				}
-			}
-			.error {
-				color: #dc2626;
-				padding: 10px;
-				background-color: #fee2e2;
-				border-radius: 4px;
-				margin-top: 10px;
-			}
-			.word {
-				position: relative;
-				display: inline-block;
-				margin-right: 4px;
-				cursor: pointer;
-			}
-
-			.word:hover {
-				background-color: #e0e7ff;
-				border-radius: 2px;
-			}
-
-			.word-timestamp {
-				position: absolute;
-				bottom: 100%;
-				left: 50%;
-				transform: translateX(-50%);
-				background-color: #1e40af;
-				color: white;
-				padding: 2px 6px;
-				border-radius: 4px;
-				font-size: 12px;
-				white-space: nowrap;
-				opacity: 0;
-				transition: opacity 0.2s;
-				pointer-events: none;
-				z-index: 10;
-			}
-
-			.word:hover .word-timestamp {
-				opacity: 1;
-			}
-
-			.segment-words {
-				margin-top: 6px;
-				line-height: 1.8;
-			}
-		</style>
+		<link rel="stylesheet" href="styles.css" />
 	</head>
 	<body>
 		<h1>Audio Transcription with Whisper AI</h1>
@@ -159,6 +15,14 @@
 				<div class="form-group">
 					<label for="audioFile">Audio File (MP3)</label>
 					<input type="file" id="audioFile" accept=".mp3,audio/*" required />
+				</div>
+
+				<div class="toggle-container">
+					<label class="toggle-switch">
+						<input type="checkbox" id="submissionMethod" />
+						<span class="toggle-slider"></span>
+					</label>
+					<span class="toggle-label">Use direct file upload instead of base64</span>
 				</div>
 
 				<div class="form-group">
@@ -206,6 +70,7 @@
 			const resultsCard = document.getElementById('resultsCard');
 			const fullTranscript = document.getElementById('fullTranscript');
 			const segments = document.getElementById('segments');
+			const submissionMethod = document.getElementById('submissionMethod');
 
 			// Transcribe audio
 			transcribeButton.addEventListener('click', async () => {
@@ -222,13 +87,23 @@
 					errorMessage.style.display = 'none';
 					resultsCard.style.display = 'none';
 
-					// Convert audio to base64
 					const file = audioFile.files[0];
-					const base64Audio = await fileToBase64(file);
-
-					// Prepare form data with base64 audio
 					const formData = new FormData();
-					formData.append('audioBase64', base64Audio);
+
+					// Check which submission method to use
+					const useDirectUpload = submissionMethod.checked;
+
+					if (useDirectUpload) {
+						// Direct file upload approach
+						formData.append('audioFile', file);
+						formData.append('submissionMethod', 'file');
+					} else {
+						// Base64 approach
+						const base64Audio = await fileToBase64(file);
+						formData.append('audioBase64', base64Audio);
+						formData.append('submissionMethod', 'base64');
+					}
+
 					formData.append('language', language.value);
 
 					// Send request to API
@@ -243,8 +118,11 @@
 						throw new Error(data.error || 'Transcription failed');
 					}
 
+					// Format the raw Whisper response
+					const formattedResponse = formatWhisperResponse(data);
+
 					// Display results
-					displayTranscription(data);
+					displayTranscription(formattedResponse);
 				} catch (error) {
 					showError(error.message);
 				} finally {
@@ -266,6 +144,23 @@
 					};
 					reader.onerror = (error) => reject(error);
 				});
+			}
+
+			// Format Whisper response to a more usable format
+			function formatWhisperResponse(whisperResponse) {
+				const segments = whisperResponse.segments || [];
+
+				return {
+					text: whisperResponse.text,
+					segments: segments.map((segment, index) => ({
+						id: index,
+						text: segment.text,
+						start: segment.start,
+						end: segment.end,
+						words: segment.words || [],
+					})),
+					language: whisperResponse.transcription_info?.language || 'unknown',
+				};
 			}
 
 			// Display transcription results
